@@ -28,12 +28,20 @@ sites_df[['Tempo_Analise', 'Pontuacao_Acessibilidade', 'Erros_Identificados']] =
 kmeans = KMeans(n_clusters=2, random_state=42)  # Dois clusters como exemplo
 sites_df['Cluster'] = kmeans.fit_predict(sites_df[['Tempo_Analise', 'Pontuacao_Acessibilidade', 'Erros_Identificados']])
 
-# Visualizar os clusters
-plt.scatter(sites_df['Tempo_Analise'], sites_df['Pontuacao_Acessibilidade'], c=sites_df['Cluster'], cmap='viridis')
+# Visualizar os clusters com legendas indicando a ferramenta
+plt.figure(figsize=(8, 6))
+for i, row in sites_df.iterrows():
+    plt.scatter(row['Tempo_Analise'], row['Pontuacao_Acessibilidade'], c=f'C{row.Cluster}', label=f"{row['Ferramenta']} ({row['Site']})")
 plt.title('Clusters de Ferramentas com Base no Desempenho')
 plt.xlabel('Tempo de Análise (normalizado)')
 plt.ylabel('Pontuação de Acessibilidade (normalizada)')
 plt.colorbar(label='Cluster')
+
+# Adicionar legendas personalizadas (uma por ferramenta/site)
+handles, labels = plt.gca().get_legend_handles_labels()
+by_label = dict(zip(labels, handles))
+plt.legend(by_label.values(), by_label.keys(), loc='best', title='Ferramentas e Sites')
+
 plt.show()
 
 # Exibir os dados finais
