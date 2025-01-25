@@ -1,54 +1,92 @@
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+import cv2
+import os
+import re
+import easyocr
+import json
 
-# Exemplo simples: Dados simulados de ferramentas de avaliação
-# Estruturando um DataFrame com as métricas coletadas
 
-data = {
-    'Site': ['site1', 'site2', 'site3', 'site4', 'site5'],
-    'Ferramenta': ['Lighthouse', 'Access Monitor', 'Wave', 'ASES', 'Lighthouse'],
-    'Tempo_Analise': [45, 30, 40, 50, 35],  # em segundos
-    'Pontuacao_Acessibilidade': [90, 96, 85, 92, 88],
-    'Erros_Identificados': [10, 3, 8, 5, 12]
-}
+from glob import glob
+from tqdm import tqdm
+from loguru import logger
 
-# Criar DataFrame
-sites_df = pd.DataFrame(data)
 
-# Normalizar os dados numéricos para comparação
-scaler = StandardScaler()
-sites_df[['Tempo_Analise', 'Pontuacao_Acessibilidade', 'Erros_Identificados']] = scaler.fit_transform(
-    sites_df[['Tempo_Analise', 'Pontuacao_Acessibilidade', 'Erros_Identificados']]
-)
+class PlateDataAnalysis:
+    def __init__(self) -> None:
+        self.reader = easyocr.Reader(['en', 'pt'])  # Configura EasyOCR para inglês e português
 
-# Aplicar K-Means para agrupar ferramentas com base no desempenho
-kmeans = KMeans(n_clusters=2, random_state=42)  # Dois clusters como exemplo
-sites_df['Cluster'] = kmeans.fit_predict(sites_df[['Tempo_Analise', 'Pontuacao_Acessibilidade', 'Erros_Identificados']])
+    def convert_video_to_images(self, video_path: str, images_folder: str):
+        if first_time:
+            currentframe = 0
+            while cam.isOpened():
+                ret, frame = cam.read()
 
-# Visualizar os clusters com legendas indicando a ferramenta
-plt.figure(figsize=(8, 6))
-for i, row in sites_df.iterrows():
-    plt.scatter(row['Tempo_Analise'], row['Pontuacao_Acessibilidade'], c=f'C{row.Cluster}', label=f"{row['Ferramenta']} ({row['Site']})")
-plt.title('Clusters de Ferramentas com Base no Desempenho')
-plt.xlabel('Tempo de Análise (normalizado)')
-plt.ylabel('Pontuação de Acessibilidade (normalizada)')
-plt.colorbar(label='Cluster')
+                if ret:
+                    name = f'./{images_folder}/frame_{str(currentframe)}.jpg'
+                    logger.info(f'Processing Frame: {currentframe}')
 
-# Adicionar legendas personalizadas (uma por ferramenta/site)
-handles, labels = plt.gca().get_legend_handles_labels()
-by_label = dict(zip(labels, handles))
-plt.legend(by_label.values(), by_label.keys(), loc='best', title='Ferramentas e Sites')
+                    # Salva o frame como imagem
+                    cv2.imwrite(name, frame)
 
-plt.show()
+                    # Pula 15 frames para reduzir o número de imagens processadas
+                    cam.set(cv2.CAP_PROP_POS_FRAMES, currentframe)
+                    currentframe += 15
+                else:
+                    # Libera a captura quando não há mais frames
+                    cam.release()
+                    break
 
-# Exibir os dados finais
-print("\nDados Estruturados com Clusters:")
-print(sites_df)
+        cam.release()
+        cv2.destroyAllWindows()
+        return True
 
-# Calcular estatísticas médias por ferramenta
-print("\nMédias por Ferramenta:")
-medias_por_ferramenta = sites_df.groupby('Ferramenta').mean()
-print(medias_por_ferramenta)
+
+    def is_valid_plate(self, plate: str) -> bool:
+        """Valida se o texto corresponde ao formato de uma placa."""
+        pattern = r'[A-Z]{3}[0-9][A-Z0-9][0-9]{2}'  # Regex para placas do Mercosul
+        return re.match(pattern, plate) is not None
+
+    def read_text_from_image(self, path_image: str) -> list:
+        """Lê texto de uma imagem usando EasyOCR."""
+        logger.info(f"Processando imagem: {path_image}")
+        return self.reader.readtext(path_image)
+
+    def filter_plates(self, text_items: list) -> list:
+        """Filtra e retorna apenas os textos que são placas válidas."""
+        plates = []
+        for _, text, confidence in text_items:
+            if self.is_valid_plate(text):
+                plates.append({"plate": text, "confidence": confidence})
+        return plates
+
+    def list_images(self, path: str) -> list:
+        """Lista todas as imagens em um diretório."""
+        return glob(os.path.join(path, "*.jpg"))
+
+     
+            
+if __name__ == '__main__':
+    # As opções de decodificação são 'greedy', 'beamsearch' e 'wordbeamsearch'
+    decoder = 'beamsearch'
+
+    # Instancia o objeto da classe PlateDataAnalysis
+    plate_analysis = PlateDataAnalysis()
+
+    # Converte o vídeo em imagens salvas na pasta 'images'
+    plate_analysis.convert_video_to_images('./video_placa.mp4', 'images')
+
+    # Lista todas as imagens extraídas
+    images_list = plate_analysis.list_images('./images/*')
+
+    # Inicializa a lista para armazenar as placas
+    plates_list = {}
+
+    # Processa cada imagem na lista
+    for image in tqdm(images_list):
+        # Extrai texto da imagem usando o método EasyOCR
+        texts = plate_analysis.read_text_from_image(image, decoder)
+
+        # Filtra os textos extraídos para identificar placas válidas
+        text_plate = plate_analysis.filter_plates(texts)
+
+        # Loga as placas encontradas
+        logger.info(f"Texto da placa: {text_plate}")
