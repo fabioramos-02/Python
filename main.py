@@ -15,6 +15,20 @@ class PlateDataAnalysis:
         self.reader = easyocr.Reader(['en', 'pt'])  # Configura EasyOCR para inglês e português
 
     def convert_video_to_images(self, video_path: str, images_folder: str):
+        cam = cv2.VideoCapture(video_path)
+
+        try:
+            # Verifica se o diretório de saída existe; caso contrário, cria
+            if not os.path.exists(images_folder):
+                os.makedirs(images_folder)
+                first_time = True
+            else:
+                first_time = False
+                logger.info(f'Path already exists: {images_folder}')
+
+        except OSError:
+            logger.error(f'Error: Creating directory of {images_folder}')
+
         if first_time:
             currentframe = 0
             while cam.isOpened():
@@ -27,11 +41,11 @@ class PlateDataAnalysis:
                     # Salva o frame como imagem
                     cv2.imwrite(name, frame)
 
-                    # Pula 15 frames para reduzir o número de imagens processadas
+                    # Avança 15 frames para capturar menos imagens
                     cam.set(cv2.CAP_PROP_POS_FRAMES, currentframe)
                     currentframe += 15
                 else:
-                    # Libera a captura quando não há mais frames
+                    # Libera o recurso quando não há mais frames
                     cam.release()
                     break
 
@@ -60,7 +74,8 @@ class PlateDataAnalysis:
 
     def list_images(self, path: str) -> list:
         """Lista todas as imagens em um diretório."""
-        return glob(os.path.join(path, "*.jpg"))
+        jpgs = glob(path)
+        return jpgs
 
      
             
