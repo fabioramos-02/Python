@@ -18,7 +18,6 @@ class PlateDataAnalysis:
         cam = cv2.VideoCapture(video_path)
 
         try:
-            # Verifica se o diretório de saída existe; caso contrário, cria
             if not os.path.exists(images_folder):
                 os.makedirs(images_folder)
                 first_time = True
@@ -37,40 +36,49 @@ class PlateDataAnalysis:
                 if ret:
                     name = f'./{images_folder}/frame_{str(currentframe)}.jpg'
                     logger.info(f'Processing Frame: {currentframe}')
-
-                    # Salva o frame como imagem
                     cv2.imwrite(name, frame)
-
-                    # Avança 15 frames para capturar menos imagens
                     cam.set(cv2.CAP_PROP_POS_FRAMES, currentframe)
                     currentframe += 15
                 else:
-                    # Libera o recurso quando não há mais frames
                     cam.release()
                     break
 
         cam.release()
-        cv2.destroyAllWindows()
+        # Remova ou comente a linha abaixo
+        # cv2.destroyAllWindows()
         return True
 
 
     def is_valid_plate(self, plate: str) -> bool:
         """Valida se o texto corresponde ao formato de uma placa."""
-        pattern = r'[A-Z]{3}[0-9][A-Z0-9][0-9]{2}'  # Regex para placas do Mercosul
-        return re.match(pattern, plate) is not None
+        pattern = r"^[A-Z]{3}[0-9][0-9A-Z][0-9]{2}$"
+        return bool(re.fullmatch(pattern, plate))
 
-    def read_text_from_image(self, path_image: str) -> list:
+    def read_text_from_image(self, path_image: str, decoder: str) -> list:
         """Lê texto de uma imagem usando EasyOCR."""
-        logger.info(f"Processando imagem: {path_image}")
-        return self.reader.readtext(path_image)
+        try:
+            result = self.reader.readtext(path_image, decoder=decoder)
+            return result
+        except Exception as e:
+            logger.error(e)
+            return None
 
     def filter_plates(self, text_items: list) -> list:
         """Filtra e retorna apenas os textos que são placas válidas."""
-        plates = []
-        for _, text, confidence in text_items:
-            if self.is_valid_plate(text):
-                plates.append({"plate": text, "confidence": confidence})
-        return plates
+        for item in text_items:
+            text = item[1].replace('-', '').replace('', '').upper()
+            precision = item[2]
+            
+            logger.info(f"Texto extraido: {text} precisão: {precision}")
+            
+            is_plate = self.is_valid_plate(text)
+            if precision > 0.75 and is_plate:
+                data = {
+                    "plate": text,
+                    "precision": precision
+                }
+                return data
+        return None
 
     def list_images(self, path: str) -> list:
         """Lista todas as imagens em um diretório."""
@@ -87,7 +95,7 @@ if __name__ == '__main__':
     plate_analysis = PlateDataAnalysis()
 
     # Converte o vídeo em imagens salvas na pasta 'images'
-    plate_analysis.convert_video_to_images('./video_placa.mp4', 'images')
+    plate_analysis.convert_video_to_images('./teste.mp4', 'images')
 
     # Lista todas as imagens extraídas
     images_list = plate_analysis.list_images('./images/*')
@@ -105,3 +113,13 @@ if __name__ == '__main__':
 
         # Loga as placas encontradas
         logger.info(f"Texto da placa: {text_plate}")
+        
+        # Adiciona a placa à lista de placas
+        if text_plate and text_plate['precision'] > plates_list.get(text_plate['plate'], 0):
+            plates_list[text_plate['plate']] = text_plate['precision']
+        logger.info(f"Não é valida")
+        
+    with open(f"./plates_{decoder}.json", 'w') as file:
+        json.dump(plates_list, file, indent=4)
+    
+    logger.info(f"Placas encontradas: {plates_list}")
